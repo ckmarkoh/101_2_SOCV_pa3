@@ -1,0 +1,22 @@
+Copyleft(c) 2011-2013 LaDs(III), GIEE, NTU, Taiwan
+
+RELEASE NOTES of QuteRTL
+
+=== February 9, 2013 ===
+Second Release of QuteRTL source.
+
+Patches : 
+QuteRTL Verification Commands Release.
+QuteRTL API in C++ release.
+Fix bugs in Verilog parser.
+
+=== October, 20, 2011 ===
+First Release of QuteRTL binary.
+First Release of QuteRTL source.
+
+Major Release of QuteRTL : 
+ Verilog / BLIF Parser.
+ Verilog Synthesizer / Flatten.
+ Verilog / BLIF Writer.
+ Print and report of design information.
+ Verification applications.

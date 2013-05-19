@@ -1,0 +1,94 @@
+QuteRTL-20130209 Source Release
+
+Second source release of QuteRTL.
+
+Copyleft(c) 2011-2013 LaDs(III), GIEE, NTU, Taiwan
+
+========================= INTRODUCTION =========================
+
+QuteRTL is a word-level framework developed for years. It generally supports 
+synthesizable Verilog inputs and BLIF format designs, followed by a quick 
+synthesizer which enables synthesizing CDFG (Control Data Flow Graph) into a 
+word-level netlist, including logics, arithmetics, shifters, comparators, 
+FFs ..., etc. Afterwards, it supports us to flatten a hierarchical design into 
+a single flattened module. Output format can be either structural Verilog 
+(hierarchical or flattened) or BLIF. Other than the main synthesis flow on RTL 
+designs, QuteRTL front-end also provides several helpful utilities for users 
+to understand their designs. In addition, QuteRTL implements several SAT-based 
+model checking algorithms, including bounded model checking and induction.
+
+In this version of release, we provide our source code for RTL front-end 
+parser, synthesizer, circuit flatten, design output writer, and verification 
+applications. Please refer to our website for detailed information.
+
+========================= DOWNLOAD =========================
+
+Latest QuteRTL source code can be download in our website
+ http://dvlab.ee.ntu.edu.tw/~publication/QuteRTL/index.html
+
+ cd <directory-where-you-extracted-QuteRTL-sources>
+ wget http://dvlab.ee.ntu.edu.tw/~publication/QuteRTL/latest/quteRTL_source.tar.gz
+ tar zxvf quteRTL_source.tar.gz
+ cd quteRTL_source
+ make
+
+========================= EXECUTION =========================
+
+To run QuteRTL, please type following line in your command-line
+ ./qutertl
+
+========================= COMMANDS =========================
+
+You can type "help" after QuteRTL command-line prompt to get fully 
+supported commands in this released source.
+
+========== Common Commands : ==========
+DOfile:             Execute the commands in the dofile.
+HELp:               Print this help message.
+HIStory:            Print command history.
+Quit:               Quit the execution.
+SET LOgfile:        Copy and/or redirect messages to assigned file.
+USAGE:              Report the runtime and / or memory usage.
+
+========== I/O Commands : ==========
+REAd DEsign:        Read design or the filelist of designs.
+WRIte CKt:          Write out flattened Verilog or BLIF circuit.
+WRIte DEsign:       Write out hierarchical Verilog design.
+
+========== Report Commands : ==========
+REPort CDfg:        Report assigned node's CDFG information.
+REPort CKt:         Report flattened circuit information.
+REPort DEsign:      Report hierarchical design information.
+REPort GAte:        Report assigned gate's information.
+REPort MOdule:      Report module information.
+
+========== Print Commands : ==========
+WRIte CDfg:         Write the CDFG of assigned node before synthesis.
+WRIte CFG:          Write out the control-flow graph for a specific pin with assigned bits.
+WRIte DFG:          Write out the data-flow graph of assigned gate in flattened design.
+WRIte HIErarchy:    Write design hierarchical relationship.
+
+========== Design Flow Commands : ==========
+FLAtten:            Perform flatten on synthesized design.
+SYNthesis:          Perform synthesis on parsed RTL design.
+
+========== Ckt Construction Commands : ==========
+CHAnge MODule:      Change current module to its parant module in current design hierarchy.
+CREate DEsign:      Create design from command line interface.
+DEFine CEll:        Create cell(s) with specified cell type on current design.
+DEFine INST:        Create module instance.
+DEFine MODule:      Create a new sub-module on current design.
+DEFine NET:         Create I/O ports and nets on current design.
+
+========== Verification Commands : ==========
+DUMp FOrmula:       Dump Model Checking Formula to File Output.
+MODel CHecking:     Perform Model Checking.
+SET FORmula:        Set up a new formula for property checking
+
+========================= LICENSE =========================
+
+Please refer to the COPYING file for license and copying information.
+
+Hu-Hsi Yeh, Cheng-Yin Wu, and Chung-Yang (Ric) Huang, 
+National Taiwan University.
+Taipei, Taiwan, 2013.
