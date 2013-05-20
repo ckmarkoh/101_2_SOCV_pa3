@@ -19,7 +19,8 @@
 #include "satMgr.h"
 using namespace std;
 
-#define IND_UBMC  1
+#define SPIND_UBMC 1
+#define IND_UBMC  0
 #define CBA_UBMC  0
 #define PBA_UBMC  0
 #define INTP_UBMC 0
@@ -37,7 +38,7 @@ void SATMgr::verifyProperty(const string& name, const V3NetId& monitor) {
   SatProofRes pRes;
 
   // Prove the monitor here!!
-  #ifdef IND_UBMC
+  #ifdef SPIND_UBMC
   pRes.setMaxDepth(100);
   pRes.setSatSolver(satSolver);
   SPindUbmc(monitor, pRes);
@@ -52,37 +53,26 @@ void SATMgr::verifyProperty(const string& name, const V3NetId& monitor) {
 
 void SATMgr::SPindUbmc(const V3NetId& monitor, SatProofRes& pRes) {
   // Solver Data
-  V3SvrData pFormulaData; V3PtrVec pFormula;
-  uint32_t boundDepth = 1;
-  uint32_t incDepth = 1;
+  //V3SvrData pFormulaData; 
+  V3PtrVec pFormula;
 
   V3SvrMiniSat* satSolver = pRes.getSatSolver();
 
   // Start UMC Based Verification
   for (uint32_t i = 0, j = pRes.getMaxDepth(); i < j; ++i) {
+	cout<<i<<endl;
     // Add time frame expanded circuit to SAT Solver
     satSolver->addBoundedVerifyData(monitor, i);
     pFormula.push_back(satSolver->getFormula(monitor, i));
-    // Check if the bound is achieved
-    if ((1 + i) < boundDepth){	
-		continue; 
-	}
-	
-//	for(uint32_t z=0; z=	
-
-	cout<<"i:"<<i<<endl;
-	assert ((1 + i) == boundDepth);
-    assert ((1 + i) >= pFormula.size()); boundDepth += incDepth;
-    // Add assume for assumption solve only
+   // Add assume for assumption solve only
     satSolver->assumeRelease();
 	cout<<"pFormula.size():"<<pFormula.size()<<endl;
     if (1 == pFormula.size()){
 		satSolver->assumeProperty(monitor, false, i);
 	}
     else {
-      pFormulaData = satSolver->setImplyUnion(pFormula);
-      assert (pFormulaData); satSolver->assumeProperty(pFormulaData);
-    }
+		assert(0);//TODO ADD
+     }
     satSolver->simplify();
     // Assumption Solve : If UNSAT, proved!
     if (!satSolver->assump_solve()) {
@@ -93,19 +83,17 @@ void SATMgr::SPindUbmc(const V3NetId& monitor, SatProofRes& pRes) {
     satSolver->assumeInit(); // Conjunction with initial condition
     if (satSolver->assump_solve()) {
 	  cout<<"disproved"<<endl;
-      for (uint32_t k = 0; k < pFormula.size(); ++k){
-        if ('0' != satSolver->getDataValue(pFormula[k])) {
-          pRes.setFired(1 + i + k - pFormula.size()); break;
-        }
-	  }
-      assert (pRes.isFired()); break;
+		if ('0' != satSolver->getDataValue(pFormula[0])) {
+		  pRes.setFired(i); break;
+		}
+       assert (pRes.isFired()); break;
     }
     // Add assert back to the property
-    if (1 < pFormula.size()) {
-      assert (pFormulaData); satSolver->assertProperty(pFormulaData, true); }
-    for (uint32_t k = i - pFormula.size(); k < i; ++k)
+	assert(pFormula.size()==1);//TODO ADD
+    for (uint32_t k = i - 1; k < i; ++k){
       satSolver->assertProperty(monitor, true, k);
-    pFormula.clear(); pFormulaData = 0;
+	}
+    pFormula.clear(); //pFormulaData = 0;
   }
 }
 
