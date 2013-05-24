@@ -20,6 +20,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include "Solver.h"
 #include "Sort.h"
 #include <cmath>
+#include <algorithm>
 
 #define CC_MINIMIZATION
 
@@ -61,7 +62,7 @@ void removeWatch(vec<Clause*>& ws, Clause* elem)
 |  Effect:
 |    Activity heuristics are updated.
 |________________________________________________________________________________________________@*/
-void Solver::newClause(const vec<Lit>& ps_, bool learnt, ClauseId id)
+void Solver::newClause(const vec<Lit>& ps_, bool learnt, ClauseId id )
 {
     assert(learnt || id == ClauseId_NULL);
     if (!ok) return;
@@ -84,7 +85,10 @@ void Solver::newClause(const vec<Lit>& ps_, bool learnt, ClauseId id)
 
         // Remove false literals:
         int     i, j;
-        if (proof != NULL) proof->beginChain(proof->addRoot(qs));
+        if (proof != NULL) {
+          proof->beginChain(proof->addRoot(qs));
+          ++root_cla_count; // MODIFICATION FOR SoCV
+        }
         for (i = j = 0; i < qs.size(); i++)
             if (value(qs[i]) != l_False)
                 qs[j++] = qs[i];
@@ -195,7 +199,7 @@ Var Solver::newVar() {
     activity    .push(0);
     order       .newVar();
     analyze_seen.push(0);
-    if (proof != NULL) unit_id.push(ClauseId_NULL);
+    if (proof != NULL ) unit_id.push(ClauseId_NULL);
     return index; }
 
 
@@ -253,7 +257,6 @@ void Solver::analyze(Clause* confl, vec<Lit>& out_learnt, int& out_btlevel)
     Lit            p     = lit_Undef;
 
     // Generate conflict clause:
-    //
     if (proof != NULL) proof->beginChain(confl->id());
     out_learnt.push();          // (leave room for the asserting literal)
     out_btlevel = 0;
@@ -275,7 +278,7 @@ void Solver::analyze(Clause* confl, vec<Lit>& out_learnt, int& out_btlevel)
                         pathC++;
                     else{
                         out_learnt.push(q);
-                        out_btlevel = max(out_btlevel, level[var(q)]);
+                        out_btlevel = std::max(out_btlevel, level[var(q)]);
                     }
                 }else
                     if (proof != NULL) proof->resolve(unit_id[var(q)], var(q));
@@ -335,7 +338,7 @@ void Solver::analyze(Clause* confl, vec<Lit>& out_learnt, int& out_btlevel)
 
     // Finilize proof logging with conflict clause minimization steps:
     //
-    if (proof != NULL){
+    if (proof != NULL ){
         sort(analyze_toclear, lastToFirst_lt(trail_pos));
         for (int k = 0; k < analyze_toclear.size(); k++){
             Var     v = var(analyze_toclear[k]); assert(level[v] > 0);
@@ -407,7 +410,8 @@ void Solver::analyzeFinal(Clause* confl, bool skip_first)
     conflict.clear();
     if (root_level == 0){
         if (proof != NULL) conflict_id = proof->last();
-        return; }
+        return; 
+    }
 
     vec<char>&     seen  = analyze_seen;
     if (proof != NULL) proof->beginChain(confl->id());
@@ -418,7 +422,6 @@ void Solver::analyzeFinal(Clause* confl, bool skip_first)
         else
             if (proof != NULL) proof->resolve(unit_id[x], x);
     }
-
     int     start = (root_level >= trail_lim.size()) ? trail.size()-1 : trail_lim[root_level];
     for (int i = start; i >= trail_lim[0]; i--){
         Var     x = var(trail[i]);
@@ -537,7 +540,6 @@ Clause* Solver::propagate()
                         proof->endChain();
                     }
                 }
-
                 *j++ = &c;
                 if (!enqueue(first, &c)){
                     if (decisionLevel() == 0)
@@ -671,10 +673,10 @@ lbool Solver::search(int nof_conflicts, int nof_learnts, const SearchParams& par
             int         backtrack_level;
             if (decisionLevel() == root_level){
                 // Contradiction found:
-                analyzeFinal(confl);
+                analyzeFinal(confl,false);
                 return l_False; }
             analyze(confl, learnt_clause, backtrack_level);
-            cancelUntil(max(backtrack_level, root_level));
+            cancelUntil(std::max(backtrack_level, root_level));
             newClause(learnt_clause, true, (proof != NULL) ? proof->last() : ClauseId_NULL);
             if (learnt_clause.size() == 1) level[var(learnt_clause[0])] = 0;    // (this is ugly (but needed for 'analyzeFinal()') -- in future versions, we will backtrack past the 'root_level' and redo the assumptions)
             varDecayActivity();
@@ -763,6 +765,159 @@ void Solver::claRescaleActivity()
 |________________________________________________________________________________________________@*/
 bool Solver::solve(const vec<Lit>& assumps)
 {
+   /*
+   cout << "Clauses" << endl;
+    for ( unsigned i = 0 ; i < clauses[14]->size() ; ++i )
+       cout << (*clauses[14])[i].hash() << " ";
+    cout << endl;
+    for ( unsigned i = 0 ; i < clauses[10]->size() ; ++i )
+       cout << (*clauses[10])[i].hash() << " ";
+    cout << endl;
+    */
+    if (!ok) return false;
+    simplifyDB();
+    if (!ok) return false;
+
+    SearchParams    params(default_params);
+    double  nof_conflicts = 100;
+    double  nof_learnts   = nClauses() / 3;
+    lbool   status        = l_Undef;
+
+    // Perform assumptions:
+    root_level = assumps.size();
+    for (int i = 0; i < assumps.size(); i++){
+        Lit p = assumps[i];
+        assert(var(p) < nVars());
+        if (!assume(p)){
+            if (reason[var(p)] != NULL){
+                analyzeFinal(reason[var(p)], true);
+                conflict.push(~p);
+            }else{
+                assert(proof == NULL || unit_id[var(p)] != ClauseId_NULL);   // (this is the pre-condition above)
+                conflict.clear();
+                conflict.push(~p);
+                if (proof != NULL ) conflict_id = unit_id[var(p)];
+            }
+            cancelUntil(0);
+            return false; }
+        Clause* confl = propagate();
+        if (confl != NULL){
+            analyzeFinal(confl,false), assert(conflict.size() > 0);
+            cancelUntil(0);
+            return false; }
+    }
+    assert(root_level == decisionLevel());
+
+    // Search:
+    if (verbosity >= 1){
+        reportf("==================================[MINISAT]===================================\n");
+        reportf("| Conflicts |     ORIGINAL     |              LEARNT              | Progress |\n");
+        reportf("|           | Clauses Literals |   Limit Clauses Literals  Lit/Cl |          |\n");
+        reportf("==============================================================================\n");
+    }
+
+    while (status == l_Undef){
+        if (verbosity >= 1){
+            reportf("| %9d | %7d %8d | %7d %7d %8d %7.1f | %6.3f %% |\n", (int)stats.conflicts, nClauses(), (int)stats.clauses_literals, (int)nof_learnts, nLearnts(), (int)stats.learnts_literals, (double)stats.learnts_literals/nLearnts(), progress_estimate*100);
+            fflush(stdout);
+        }
+        status = search((int)nof_conflicts, (int)nof_learnts, params);
+        if ( _conflictNum>0 && nof_conflicts >= _conflictNum && status==l_Undef ){
+           _aborted = 1;
+           break;
+        }
+        nof_conflicts *= 1.5;
+        nof_learnts   *= 1.1;
+    }
+    if (verbosity >= 1)
+        reportf("==============================================================================\n");
+
+    cancelUntil(0);
+    return status == l_True;
+}
+
+bool Solver::mySolve(const vec<Lit>& assumps, int conflictThreshold, bool& result)
+{
+    if (!ok)
+    {
+       result = false;
+       return true;
+    }
+    simplifyDB();
+    if (!ok)
+    {
+       result = false;
+       return true;
+    }
+
+    SearchParams    params(default_params);
+    double  nof_conflicts = 100;
+    double  nof_learnts   = nClauses() / 3;
+    lbool   status        = l_Undef;
+
+    // Perform assumptions:
+    root_level = assumps.size();
+    for (int i = 0; i < assumps.size(); i++){
+        Lit p = assumps[i];
+        assert(var(p) < nVars());
+        if (!assume(p)){
+            if (reason[var(p)] != NULL){
+                analyzeFinal(reason[var(p)], true);
+                conflict.push(~p);
+            }else{
+                assert(proof == NULL || unit_id[var(p)] != ClauseId_NULL);   // (this is the pre-condition above)
+                conflict.clear();
+                conflict.push(~p);
+                if (proof != NULL) conflict_id = unit_id[var(p)];
+            }
+            cancelUntil(0);
+            result = false;
+            return true;
+        }
+        Clause* confl = propagate();
+        if (confl != NULL){
+            analyzeFinal(confl), assert(conflict.size() > 0);
+            cancelUntil(0);
+            result = false;
+            return true;
+        }
+    }
+    assert(root_level == decisionLevel());
+
+    // Search:
+    if (verbosity >= 1){
+        reportf("==================================[MINISAT]===================================\n");
+        reportf("| Conflicts |     ORIGINAL     |              LEARNT              | Progress |\n");
+        reportf("|           | Clauses Literals |   Limit Clauses Literals  Lit/Cl |          |\n");
+        reportf("==============================================================================\n");
+    }
+
+    while (status == l_Undef){
+        if (verbosity >= 1){
+            reportf("| %9d | %7d %8d | %7d %7d %8d %7.1f | %6.3f %% |\n", (int)stats.conflicts, nClauses(), (int)stats.clauses_literals, (int)nof_learnts, nLearnts(), (int)stats.learnts_literals, (double)stats.learnts_literals/nLearnts(), progress_estimate*100);
+            fflush(stdout);
+        }
+        status = search((int)nof_conflicts, (int)nof_learnts, params);
+        nof_conflicts *= 1.5;
+        nof_learnts   *= 1.1;
+        if (nof_conflicts > conflictThreshold) {
+           cancelUntil(0);
+           return false;
+        }
+    }
+    if (verbosity >= 1)
+        reportf("==============================================================================\n");
+
+    cancelUntil(0);
+    result = (status == l_True);
+    return true;
+}
+
+/*
+ * added by Gary
+ */
+lbool Solver::solveLimited(const vec<Lit>& assumps, int64_t nConflicts)
+{
     simplifyDB();
     if (!ok) return false;
 
@@ -805,6 +960,8 @@ bool Solver::solve(const vec<Lit>& assumps)
     }
 
     while (status == l_Undef){
+        if ( nof_conflicts > nConflicts )
+           return l_Undef;
         if (verbosity >= 1){
             reportf("| %9d | %7d %8d | %7d %7d %8d %7.1f | %6.3f %% |\n", (int)stats.conflicts, nClauses(), (int)stats.clauses_literals, (int)nof_learnts, nLearnts(), (int)stats.learnts_literals, (double)stats.learnts_literals/nLearnts(), progress_estimate*100);
             fflush(stdout);
@@ -817,5 +974,5 @@ bool Solver::solve(const vec<Lit>& assumps)
         reportf("==============================================================================\n");
 
     cancelUntil(0);
-    return status == l_True;
+    return status;
 }

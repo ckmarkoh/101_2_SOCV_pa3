@@ -19,8 +19,10 @@
  * Class V3SvrMiniSat Implementations
 \* -------------------------------------------------- */
 // Constructor and Destructor
-V3SvrMiniSat::V3SvrMiniSat(const V3Ntk* const ntk, const bool& freeBound) : V3SvrBase(ntk, freeBound) {
-   _Solver = new MSolver(); assert (_Solver); assumeRelease(); initRelease();
+V3SvrMiniSat::V3SvrMiniSat(const V3Ntk* const ntk, const bool& freeBound, const bool& proofLog) : V3SvrBase(ntk, freeBound) {
+   _Solver = new MSolver();
+   if(proofLog) _Solver->proof = new Proof(); // MODIFICATION FOR SoCV
+   assert (_Solver); assumeRelease(); initRelease();
    _curVar = 0; _Solver->newVar(); ++_curVar;  // 0 for Recycle Literal, if Needed
    _ntkData = new V3SvrMVarData[ntk->getNetSize()];
    for (uint32_t i = 0; i < ntk->getNetSize(); ++i) _ntkData[i].clear();
@@ -798,6 +800,16 @@ V3SvrMiniSat::addBoundedVerifyData(const V3NetId& id, uint32_t& depth) {
 const bool
 V3SvrMiniSat::existVerifyData(const V3NetId& id, const uint32_t& depth) {
    return getVerifyData(id, depth);
+}
+
+// MODIFICATION FOR SoCV
+void V3SvrMiniSat::resizeNtkData(const uint32_t& num) {
+  V3SvrMVarData* ntkData_tmp = new V3SvrMVarData[_ntk->getNetSize()];
+  for(uint32_t i = 0, j = (_ntk->getNetSize()-num); i < j; ++i) {
+    ntkData_tmp[i] = _ntkData[i];
+  }
+  delete[] _ntkData;
+  _ntkData = ntkData_tmp;
 }
 
 // MiniSat Functions

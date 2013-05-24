@@ -19,7 +19,7 @@ class V3SvrMiniSat : public V3SvrBase
    friend class SATMgr; // MODIFICATION FOR SoCV
    public : 
       // Constructor and Destructor
-      V3SvrMiniSat(const V3Ntk* const, const bool& = false);
+      V3SvrMiniSat(const V3Ntk* const, const bool& = false, const bool& = false); // MODIFICATION FOR SoCV
       ~V3SvrMiniSat();
       // Basic Operation Functions
       void reset();
@@ -78,6 +78,8 @@ class V3SvrMiniSat : public V3SvrBase
       // Network to Solver Functions
       void addBoundedVerifyData(const V3NetId&, uint32_t&);
       const bool existVerifyData(const V3NetId&, const uint32_t&);
+      // MODIFICATION FOR SoCV
+      void resizeNtkData(const uint32_t&);
    private : 
       // MiniSat Functions
       const Var newVar(const uint32_t&);

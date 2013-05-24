@@ -57,7 +57,10 @@ public:
     friend bool operator == (Lit p, Lit q);
     friend bool operator <  (Lit p, Lit q);
 
-    uint hash() const { return (uint)x; }
+	inline void operator = (int n) { x = n; }
+	inline void neg() { x ^= 0x1; }
+
+    inline uint hash() const { return (uint)x; }
 };
 
 inline  Lit  mkLit     (Var var, bool sign) { Lit p; p.x = var + var + (int)sign; return p; }

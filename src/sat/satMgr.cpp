@@ -13,12 +13,13 @@
 #include "v3Msg.h"
 #include "v3NtkUtil.h"
 #include "v3SvrMiniSat.h"
-#include "v3NtkElaborate.h"
-#include "v3VrfUMC.h"
+//#include "v3NtkElaborate.h"
+//#include "v3VrfUMC.h"
 #include "reader.h"
 #include "satMgr.h"
 using namespace std;
 
+#define ITP_UBMC 1
 #define SPIND_UBMC 1
 #define IND_UBMC  0
 #define CBA_UBMC  0
@@ -32,70 +33,164 @@ void SATMgr::verifyProperty(const string& name, const V3NetId& monitor) {
   // simplified from vrf/v3VrfUMC.cpp
 
   // Initialize
-  V3SvrMiniSat* satSolver
-   = new V3SvrMiniSat(v3Handler.getCurHandler()->getNtk(), false);
-
-  SatProofRes pRes;
-
+  // duplicate the network, so you can modified
+  // the ntk for the proving property without
+  // destroying the original network
+  // [NOTE!!] if you have constructed the new cells in the ntk
+  // please call V3SvrMiniSat::resizeNtkData(# cell difference)
+  // to ensure the solver updating the ntk data,
+  // or you can delete the solver and new one
+	V3SvrMiniSat* satSolver=0;
+	SatProofRes pRes;
+  #if ITP_UBMC
+  _ntk = new V3Ntk(); *_ntk = *(v3Handler.getCurHandler()->getNtk());
+  satSolver = new V3SvrMiniSat(_ntk, false, true);
+//  bind(satSolver);
   // Prove the monitor here!!
-  #ifdef SPIND_UBMC
   pRes.setMaxDepth(100);
   pRes.setSatSolver(satSolver);
-  SPindUbmc(monitor, pRes);
-  #endif
-
+  itpUbmc(monitor, pRes);
   pRes.reportResult(name);
   if (pRes.isFired())
-    pRes.reportCex(monitor);
+    pRes.reportCex(monitor, _ntk);
+  delete satSolver; delete _ntk;
+  reset();
+  #endif
 
-  delete satSolver;
+  #if SPIND_UBMC
+  _ntk = new V3Ntk(); *_ntk = *(v3Handler.getCurHandler()->getNtk());
+  satSolver = new V3SvrMiniSat(_ntk, false, true);
+//  bind(satSolver);
+  // Prove the monitor here!!
+  pRes.setMaxDepth(100);
+  pRes.setSatSolver(satSolver);
+  sPindUbmc(monitor, pRes);
+  pRes.reportResult(name);
+  if (pRes.isFired())
+    pRes.reportCex(monitor, _ntk);
+  delete satSolver; delete _ntk;
+  reset();
+  #endif
+
 }
 
-void SATMgr::SPindUbmc(const V3NetId& monitor, SatProofRes& pRes) {
+
+void SATMgr::itpUbmc(const V3NetId& monitor, SatProofRes& pRes) {
+
+
+
+}
+void SATMgr::sPindUbmc(const V3NetId& monitor, SatProofRes& pRes) {
   // Solver Data
-  //V3SvrData pFormulaData; 
-  V3PtrVec pFormula;
+//  V3SvrData pFormulaData; 
+//  V3PtrVec pFormula;
 
   V3SvrMiniSat* satSolver = pRes.getSatSolver();
 
   // Start UMC Based Verification
   for (uint32_t i = 0, j = pRes.getMaxDepth(); i < j; ++i) {
-	cout<<i<<endl;
+//	cout<<"timeframe i:"<<i<<endl;
+//	cout<<"monitor.id:"<<monitor.id<<endl;
     // Add time frame expanded circuit to SAT Solver
     satSolver->addBoundedVerifyData(monitor, i);
-    pFormula.push_back(satSolver->getFormula(monitor, i));
+//    pFormula.push_back(satSolver->getFormula(monitor, i));
+//	cout<<"pformula"<<pFormula[0]<<endl;
+//	cout<<satSolver->getVerifyData(monitor, i)<<endl;
    // Add assume for assumption solve only
     satSolver->assumeRelease();
-	cout<<"pFormula.size():"<<pFormula.size()<<endl;
-    if (1 == pFormula.size()){
+  //  if (1 == pFormula.size()){
 		satSolver->assumeProperty(monitor, false, i);
+//	}
+  //  else {
+	//	assert(0);//TODO ADD
+    // }
+	/***SP***/
+	for(size_t z=2;z<=i;z++){
+		V3PtrVec ffp_eq_vec;
+		ffp_eq_vec.clear();
+		for (unsigned k=0;k<_ntk->getLatchSize();k++) {
+		  V3NetId  ffp=_ntk->getLatch(k);
+		  if((satSolver->existVerifyData(ffp, i-1))&&
+		 	(satSolver->existVerifyData(ffp,i-z)) 
+			){
+		//	cout<<"latch size:"<<_ntk->getLatchSize()<<endl;
+		//	if(i>1){
+			//cout<<"build"<<endl;
+				V3SvrData ffp_pre1=satSolver->getFormula(ffp, i-1);
+				V3SvrData ffp_pre2=satSolver->getFormula(ffp, i-z);
+				V3PtrVec ffp_f1,ffp_f2,ffp_u1;
+				ffp_f1.clear();
+				ffp_f2.clear();
+				ffp_u1.clear();
+				ffp_f1.push_back(ffp_pre1);
+				ffp_f1.push_back(satSolver->getNegFormula(ffp_pre2));
+				ffp_f2.push_back(satSolver->getNegFormula(ffp_pre1));
+				ffp_f2.push_back(ffp_pre2);
+				V3SvrData ffp_i1=satSolver->setImplyIntersection(ffp_f1);
+				V3SvrData ffp_i2=satSolver->setImplyIntersection(ffp_f2);
+				ffp_u1.push_back(ffp_i1);
+				ffp_u1.push_back(ffp_i2);
+				V3SvrData ffp_xor=satSolver->setImplyUnion(ffp_u1);
+				ffp_eq_vec.push_back(ffp_xor);
+		//	}
+		  } //else  cout <<"id:"<< ffp.id<<" val:" <<"x"<<endl;
+		}
+		V3SvrData ffp_eq= satSolver->setImplyUnion(ffp_eq_vec);
+		satSolver->assertProperty(ffp_eq,false);
 	}
-    else {
-		assert(0);//TODO ADD
-     }
+	
+	/***END SP***/
+
     satSolver->simplify();
     // Assumption Solve : If UNSAT, proved!
     if (!satSolver->assump_solve()) {
 		cout<<"proved"<<endl;
       pRes.setProved(i); break;
     }
+
+/*	V3BitVecX dataValue;
+	V3BitVecX dataValue2;
+  	for (uint32_t z = 2; z <= i; ++z) {
+	//	cout << i << ": " <<" z:"<<z<<endl;
+		for (unsigned k=0;k<_ntk->getLatchSize();k++) {
+			V3NetId  ffp=_ntk->getLatch(k);
+		//	cout<<"latch size:"<<_ntk->getLatchSize()<<endl;
+		  if((satSolver->existVerifyData(ffp, i-1))&&
+		 	(satSolver->existVerifyData(ffp,i-z)) 
+			){
+			dataValue = satSolver->getDataValue(ffp, i-1);
+			dataValue2 = satSolver->getDataValue(ffp, i-z);
+		//	assert (dataValue.size() == ntk->getNetWidth(ntk->getLatch(j)));
+
+		//	cout <<"i-1:"<<endl<<" "<< dataValue<<endl;
+		//	cout <<"i-z:"<<endl<<" "<< dataValue2<<endl;
+			 } 
+		}
+	}*/
+	
+    satSolver->assumeRelease();
+	satSolver->assumeProperty(monitor, false, i);
     // Assumption Solve : If SAT, disproved!
     satSolver->assumeInit(); // Conjunction with initial condition
     if (satSolver->assump_solve()) {
 	  cout<<"disproved"<<endl;
-		if ('0' != satSolver->getDataValue(pFormula[0])) {
+		//if ('0' != satSolver->getDataValue(pFormula[0])) {
 		  pRes.setFired(i); break;
-		}
+		//}
        assert (pRes.isFired()); break;
     }
+
+
+
     // Add assert back to the property
-	assert(pFormula.size()==1);//TODO ADD
+//	assert(pFormula.size()==1);//TODO ADD
     for (uint32_t k = i - 1; k < i; ++k){
       satSolver->assertProperty(monitor, true, k);
 	}
-    pFormula.clear(); //pFormulaData = 0;
+//    pFormula.clear(); //pFormulaData = 0;
   }
 }
+
 
 
 
@@ -146,51 +241,44 @@ void SATMgr::indUbmc(const V3NetId& monitor, SatProofRes& pRes) {
   }
 }
 
+void SATMgr::bind(V3SvrMiniSat* ptrMinisat) {
+  _ptrMinisat = ptrMinisat;
+  if(_ptrMinisat->_Solver->proof == NULL) {
+    Msg(MSG_ERR) << "The Solver has no Proof!! Try Declaring the Solver with proofLog be set!!" << endl;
+    exit(0);
+  }
+}
+
 void SATMgr::reset() {
   _ptrMinisat = NULL;
+  _ntk = NULL;
   _varGroup.clear();
   _var2Net.clear();
   _isClauseOn.clear();
+  _isClaOnDup.clear();
 }
 
 void SATMgr::markOnsetClause(const ClauseId& cid) {
-  unsigned cSize = _ptrMinisat->_Solver->nClauses();
+  unsigned cSize = getNumClauses();
   assert(cid < (int)cSize);
   if(_isClauseOn.size() < cSize) {
-    unsigned origSize = _isClauseOn.size();
-    _isClauseOn.resize(cSize);
-    for(unsigned i = origSize; i < cSize; ++i)
-      _isClauseOn[i] = false;
+    _isClauseOn.resize(cSize, false);
   }
   _isClauseOn[cid] = true;
 }
 
-void SATMgr::markVarGroup(const Var& var, const VAR_GROUP& vg) {
-  unsigned vSize = _ptrMinisat->_Solver->nVars();
-  assert(var < (int)vSize);
-  if(_varGroup.size() < vSize) {
-    unsigned origSize = _varGroup.size();
-    _varGroup.resize(vSize);
-    for(unsigned i = origSize; i < vSize; ++i)
-      _varGroup[i] = NONE;
+void SATMgr::markOffsetClause(const ClauseId& cid) {
+  unsigned cSize = getNumClauses();
+  assert(cid < (int)cSize);
+  if(_isClauseOn.size() < cSize) {
+    _isClauseOn.resize(cSize, false);
   }
-  _varGroup[var] = vg;
+  _isClauseOn[cid] = false;
 }
 
 void SATMgr::mapVar2Net(const Var& var, const V3NetId& net) {
   assert(_var2Net.find(var) == _var2Net.end());
   _var2Net[var] = net;
-}
-
-bool SATMgr::solveWithProof(const bool& doAssump) {
-  // clear previous proof histiry
-  if(_ptrMinisat->_Solver->proof != NULL)
-    delete _ptrMinisat->_Solver->proof;
-
-  _ptrMinisat->_Solver->proof = new Proof();
-
-  if(doAssump) return _ptrMinisat->assump_solve();
-  return _ptrMinisat->solve();
 }
 
 V3NetId SATMgr::getItp() const {
@@ -205,17 +293,15 @@ V3NetId SATMgr::getItp() const {
 
   // delete proof log
   unlink(proofName.c_str());
-  delete _ptrMinisat->_Solver->proof;
-  _ptrMinisat->_Solver->proof = NULL;
 
   return netId;
 }
 
-vector<ClauseId> SATMgr::getUNSATCore() const {
+vector<Clause> SATMgr::getUNSATCore() const {
   assert(_ptrMinisat);
   assert(_ptrMinisat->_Solver->proof);
 
-  vector<ClauseId> unsatCore;
+  vector<Clause> unsatCore;
   unsatCore.clear();
 
   // save proof log
@@ -229,13 +315,11 @@ vector<ClauseId> SATMgr::getUNSATCore() const {
 
   // delete proof log
   unlink(proofName.c_str());
-  delete _ptrMinisat->_Solver->proof;
-  _ptrMinisat->_Solver->proof = NULL;
 
   return unsatCore;
 }
 
-void SATMgr::retrieveProof( Reader& rdr, vector<ClauseId>& unsatCore) const {
+void SATMgr::retrieveProof( Reader& rdr, vector<Clause>& unsatCore) const {
   unsigned int tmp, cid, idx, tmp_cid;
 
   ///// Clear all /////
@@ -273,7 +357,16 @@ void SATMgr::retrieveProof( Reader& rdr, vector<ClauseId>& unsatCore) const {
     tmp = rdr.get64();
     if((tmp & 1) == 0) {
       //root clause
-      unsatCore.push_back(cid);
+      vec<Lit> lits;
+      idx = tmp >> 1;
+      lits.push(toLit(idx));
+      while( _varGroup[idx >> 1] != COMMON ){
+        tmp = rdr.get64();
+        if( tmp == 0 ) break;
+        idx += tmp;
+        lits.push(toLit(idx));
+      }
+      unsatCore.push_back(Clause(false, lits));
     } else {
       //derived clause
       tmp_cid = cid - (tmp >> 1);
@@ -295,25 +388,60 @@ void SATMgr::retrieveProof( Reader& rdr, vector<ClauseId>& unsatCore) const {
 }
 
 void SATMgr::retrieveProof( Reader& rdr, vector<unsigned int>& clausePos, vector<ClauseId>& usedClause) const {
-  unsigned int tmp, cid, idx, tmp_cid;
+  unsigned int tmp, cid, idx, tmp_cid, root_cid;
 
   ///// Clear all /////
   clausePos.clear();
   usedClause.clear();
+  _varGroup.clear();
+  _varGroup.resize(_ptrMinisat->_Solver->nVars(), NONE);
+  _isClaOnDup.clear();
+  assert((int)_isClauseOn.size() == getNumClauses());
 
-  ///// Generate clausePos /////
+  ///// Generate clausePos && varGroup /////
   assert( !rdr.null() );
   rdr.seek(0);
+  root_cid = 0;
   for( unsigned int pos = 0; (tmp = rdr.get64()) != RDR_EOF ; pos = rdr.Current_Pos() ){
     cid = clausePos.size();
     clausePos.push_back( pos );
     if((tmp & 1) == 0) {
-      // root clause
-      while((tmp = rdr.get64()) != 0) {}
+      //Root Clause
+      _isClaOnDup.push_back(_isClauseOn[root_cid]);
+      idx = tmp >> 1;
+      if( _isClauseOn[ root_cid ] ) {
+        if(_varGroup[idx >> 1] == NONE) _varGroup[idx >> 1] = LOCAL_ON;
+        else if(_varGroup[idx >> 1] == LOCAL_OFF) _varGroup[idx >> 1] = COMMON;
+      } else {
+        if(_varGroup[idx >> 1] == NONE) _varGroup[idx >> 1] = LOCAL_OFF;
+        else if(_varGroup[idx >> 1] == LOCAL_ON) _varGroup[idx >> 1] = COMMON;
+      }
+      while(1) {
+        tmp = rdr.get64();
+        if(tmp == 0) break;
+        idx += tmp;
+        if( _isClauseOn[ root_cid ] ) {
+          if(_varGroup[idx >> 1] == NONE) _varGroup[idx >> 1] = LOCAL_ON;
+          else if(_varGroup[idx >> 1] == LOCAL_OFF) _varGroup[idx >> 1] = COMMON;
+        } else {
+          if(_varGroup[idx >> 1] == NONE) _varGroup[idx >> 1] = LOCAL_OFF;
+          else if(_varGroup[idx >> 1] == LOCAL_ON) _varGroup[idx >> 1] = COMMON;
+        }
+      }
+      ++root_cid;
     } else {
+      _isClaOnDup.push_back(false);
       idx = 0;
-      while((tmp = rdr.get64()) != 0) { idx = 1; }
-      if( idx == 0 ) clausePos.pop_back(); // Clause Deleted
+      while(1) {
+        tmp = rdr.get64();
+        if(tmp == 0) break;
+        idx = 1;
+        tmp = rdr.get64();
+      }
+      if( idx == 0 ) {
+        clausePos.pop_back(); // Clause Deleted
+        _isClaOnDup.pop_back(); // Clause Deleted
+      }
     }
   }
 
@@ -323,7 +451,7 @@ void SATMgr::retrieveProof( Reader& rdr, vector<unsigned int>& clausePos, vector
   in_queue.resize( clausePos.size() );
   for( unsigned int i = 0; i < in_queue.size() ; i++ ) in_queue[i] = false;
   in_queue[ in_queue.size() - 1 ] = true;
-  clause_queue.push( clausePos.size() - 1 ); //Push root clause
+  clause_queue.push( clausePos.size() - 1 ); //Push root empty clause
   while( clause_queue.size() != 0 ){
     cid = clause_queue.top();
     clause_queue.pop();
@@ -363,26 +491,26 @@ V3NetId SATMgr::buildItp(const string& proofName) const {
   map<ClauseId, V3NetId> claItpLookup;
   vector<unsigned int> clausePos;
   vector<ClauseId> usedClause;
-  // ntk
-  V3Ntk* const ntk = v3Handler.getCurHandler()->getNtk();
+  // ntk size
+  uint32_t netSize = _ntk->getNetSize();
   // temperate variables
   V3NetId nId, nId1, nId2;
   int i, cid, tmp, idx, tmp_cid;
   // const 1 & const 0
   V3NetId CONST0, CONST1;
-  CONST0 = ntk->getConst(0);
+  CONST0 = _ntk->getConst(0);
   CONST1 = ~CONST0;
 
   rdr.open( proofName.c_str() );
   retrieveProof( rdr, clausePos, usedClause );
 
-  for(i = 0; i < (int)usedClause.size() ; i++){
+  for(i = 0; i < (int)usedClause.size() ; i++) {
     cid = usedClause[i];
     rdr.seek( clausePos[ cid ] );
     tmp = rdr.get64();
-    if((tmp & 1) == 0){
+    if((tmp & 1) == 0) {
       //Root Clause
-      if( _isClauseOn[ cid ] ){
+      if( _isClaOnDup[ cid ] ) {
         idx = tmp >> 1;
         while( _varGroup[idx >> 1] != COMMON ){
           tmp = rdr.get64();
@@ -392,8 +520,10 @@ V3NetId SATMgr::buildItp(const string& proofName) const {
 
         if ( _varGroup[idx >> 1] == COMMON ) {
           assert(_var2Net.find(idx >> 1) != _var2Net.end());
+          nId = (_var2Net.find(idx >> 1))->second;
           nId1 = (_var2Net.find(idx >> 1))->second;
           if((idx & 1) == 1) nId1 = ~nId1;
+          if((idx & 1) == 1) nId = ~nId;
           while(1) {
             tmp = rdr.get64();
             if( tmp == 0 ) break;
@@ -403,9 +533,8 @@ V3NetId SATMgr::buildItp(const string& proofName) const {
               nId2 = (_var2Net.find(idx >> 1))->second;
               if((idx & 1) == 1) nId2 = ~nId2;
               // or
-              nId = ntk->createNet();
-              createV3AndGate(ntk, nId, ~nId1, ~nId2);
-              nId = ~nId;
+              nId = ~_ntk->createNet();
+              createV3AndGate(_ntk, nId, ~nId1, ~nId2);
               nId1 = nId;
             }
           }
@@ -420,6 +549,7 @@ V3NetId SATMgr::buildItp(const string& proofName) const {
       //Derived Clause
       tmp_cid = cid - (tmp >> 1);
       assert( claItpLookup.find( tmp_cid ) != claItpLookup.end() );
+      nId = (claItpLookup.find( tmp_cid ))->second;
       nId1 = (claItpLookup.find( tmp_cid ))->second;
       while(1) {
         idx = rdr.get64();
@@ -428,33 +558,38 @@ V3NetId SATMgr::buildItp(const string& proofName) const {
         //Var is idx
         tmp_cid = cid - rdr.get64();
         assert( claItpLookup.find( tmp_cid ) != claItpLookup.end() );
-        nId2 = claItpLookup[ tmp_cid ];
+        nId2 = (claItpLookup.find( tmp_cid ))->second;
         if( nId1 != nId2 ) {
           if( _varGroup[idx] == LOCAL_ON ) { // Local to A. Build OR Gate.
             if( nId1 == CONST1 || nId2 == CONST1 ) {
               nId = CONST1;
+              nId1 = nId;
             } else if( nId1 == CONST0 ) {
               nId = nId2;
+              nId1 = nId;
             } else if( nId2 == CONST0 ) {
               nId = nId1;
+              nId1 = nId;
             } else {
               // or
-              nId = ntk->createNet();
-              createV3AndGate(ntk, nId, ~nId1, ~nId2);
-              nId = ~nId;
+              nId = ~_ntk->createNet();
+              createV3AndGate(_ntk, nId, ~nId1, ~nId2);
               nId1 = nId;
             }
           } else { // Build AND Gate.
             if( nId1 == CONST0 || nId2 == CONST0 ){
               nId = CONST0;
+              nId1 = nId;
             } else if( nId1 == CONST1 ) {
               nId = nId2;
+              nId1 = nId;
             } else if( nId2 == CONST1 ) {
               nId = nId1;
+              nId1 = nId;
             } else {
-              // or
-              nId = ntk->createNet();
-              createV3AndGate(ntk, nId, nId1, nId2);
+              // and
+              nId = _ntk->createNet();
+              createV3AndGate(_ntk, nId, nId1, nId2);
               nId1 = nId;
             }
           }
@@ -466,6 +601,8 @@ V3NetId SATMgr::buildItp(const string& proofName) const {
 
   cid = usedClause[ usedClause.size() - 1 ];
   nId = claItpLookup[cid];
+
+  _ptrMinisat->resizeNtkData(_ntk->getNetSize() - netSize); // resize Solver data to ntk size
 
   return nId;
 }
@@ -480,9 +617,8 @@ void SatProofRes::reportResult(const string& name) const {
   } else Msg(MSG_IFO) << "UNDECIDED at depth = " << _maxDepth << endl;
 }
 
-void SatProofRes::reportCex(const V3NetId& monitor) const {
+void SatProofRes::reportCex(const V3NetId& monitor, const V3Ntk* const ntk) const {
   assert (_satSolver != 0);
-  V3Ntk* const ntk = v3Handler.getCurHandler()->getNtk();
 
   // Output Pattern Value (PI + PIO)
   V3BitVecX dataValue;

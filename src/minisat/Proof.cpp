@@ -17,8 +17,14 @@ DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **************************************************************************************************/
 
+#include <cstdlib>
 #include "Proof.h"
 #include "Sort.h"
+#include <string>
+#include <iostream>
+
+using std::string;
+using std::cout;
 
 
 //=================================================================================================
@@ -32,7 +38,8 @@ public:
    ~TempFiles()
     {
         for (int i = 0; i < files.size(); i++)
-            remove(files[i]);
+			unlink(files[i]);
+            //remove(files[i]);
             //printf("Didn't delete:\n  %s\n", files[i]);
     }
 
@@ -42,10 +49,27 @@ public:
     char* open(File& fp)
     {
         char*   name;
+		char*	tmpdir = getenv("TMPDIR");
+		string 	tmp_name;
+		int 	tempfd;
+		if(tmpdir == NULL)
+			tmp_name = "/tmp/";
+		else
+			tmp_name = tmpdir;
+		if(tmp_name[tmp_name.length()-1] != '/') tmp_name.push_back('/');
+		tmp_name += "ECOXXXXXX";
+		name = new char[tmp_name.length()+1];
+		strcpy( name, tmp_name.c_str() );
         for(;;){
-            name = tempnam(NULL, NULL);     // (gcc complains about this... stupid gcc...)
-            assert(name != NULL);
-            fp.open(name, "wx+");
+            //name = tempnam(NULL, NULL);     // (gcc complains about this... stupid gcc...)
+            //assert(name != NULL);
+            //fp.open(name, "wx+");
+			tempfd = mkstemp(name);
+			if(tempfd == -1) {
+				cout << "\nError opening temporary file.\nPlease try setting TMPDIR to a accessible path.\n";
+				exit(0);
+			}
+			fp.open( tempfd, WRITE, true );
             if (fp.null())
                 xfree(name);
             else{

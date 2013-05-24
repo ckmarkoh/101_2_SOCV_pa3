@@ -382,13 +382,18 @@ void V3Ntk::printFaninRec(V3NtkHandler* const handler, const V3NetId& netId, con
 
   string spacing = "";
   for(int i = 0; i < depth; ++i) spacing += "  ";
-  Msg(MSG_IFO) << spacing << handler->getNetNameOrFormedWithId(netId) << " / ";
 
-  if(netId.cp) Msg(MSG_IFO) << '!';
+  if(netId.cp) {
+    Msg(MSG_IFO) << spacing << '~' << handler->getNetNameOrFormedWithId(~netId) << " / ";
+    Msg(MSG_IFO) << '!';
+  } else {
+    Msg(MSG_IFO) << spacing << handler->getNetNameOrFormedWithId(netId) << " / ";
+  }
   Msg(MSG_IFO) << netId.id;
   if (isVisit) Msg(MSG_IFO) << " (*)";
   Msg(MSG_IFO) << endl;
 
+  if(depth != 0 && getGateType(netId) == V3_FF) return;
   if(depth < level && !isVisit) {
     for(unsigned i = 0; i < getInputNetSize(netId); ++i) {
       printFaninRec(handler, getInputNetId(netId, i), depth+1, level);

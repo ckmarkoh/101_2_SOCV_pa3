@@ -90,6 +90,8 @@ static inline double drand(double& seed) {
 // Returns a random integer 0 <= x < size. Seed must never be 0.
 static inline int irand(double& seed, int size) {
     return (int)(drand(seed) * size); }
+//extern double drand(double&);
+//extern int irand(double&, int);
 
 
 //=================================================================================================
@@ -148,6 +150,7 @@ static inline int64 memUsed() { return (int64)memReadStat(0) * (int64)getpagesiz
 
 template<class T>
 class vec {
+public:
     T*  data;
     int sz;
     int cap;
@@ -155,7 +158,7 @@ class vec {
     void     init(int size, const T& pad);
     void     grow(int min_cap);
 
-public:
+//public:
     // Types:
     typedef int Key;
     typedef T   Datum;
@@ -192,14 +195,22 @@ public:
     T&       operator [] (int index)        { return data[index]; }
 
     // Don't allow copying (error prone):
-    //vec<T>&  operator = (vec<T>& other) { TEMPLATE_FAIL; }
-    //         vec        (vec<T>& other) { TEMPLATE_FAIL; }
+    vec<T>&  operator = (const vec<T>& other);
+             vec        (vec<T>& other) { TEMPLATE_FAIL; }
 
     // Duplicatation (preferred instead):
     void copyTo(vec<T>& copy) const { copy.clear(); copy.growTo(sz); for (int i = 0; i < sz; i++) new (&copy[i]) T(data[i]); }
     void moveTo(vec<T>& dest) { dest.clear(true); dest.data = data; dest.sz = sz; dest.cap = cap; data = NULL; sz = 0; cap = 0; }
 };
 
+template<class T>
+vec<T>& vec<T>::operator = (const vec<T>& other){
+	clear(true);
+	growTo(other.size());
+	for(int i = 0 ; i < sz ; ++i)
+		data[i] = other.data[i];
+}
+	
 template<class T>
 void vec<T>::grow(int min_cap) {
     if (min_cap <= cap) return;

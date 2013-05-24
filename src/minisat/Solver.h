@@ -27,7 +27,6 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 // Redfine if you want output to go somewhere else:
 #define reportf(format, args...) ( printf(format , ## args), fflush(stdout) )
 
-
 //=================================================================================================
 // Solver -- the main class:
 
@@ -91,7 +90,7 @@ protected:
     void        cancelUntil      (int level);
     void        record           (const vec<Lit>& clause);
 
-    void        analyze          (Clause* confl, vec<Lit>& out_learnt, int& out_btlevel); // (bt = backtrack)
+    void        analyze          (Clause* confl, vec<Lit>& out_learnt, int& out_btlevel ); // (bt = backtrack)
     bool        analyze_removable(Lit p, uint min_level);                                 // (helper method for 'analyze()')
     void        analyzeFinal     (Clause* confl, bool skip_first = false);
     bool        enqueue          (Lit fact, Clause* from = NULL);
@@ -114,7 +113,7 @@ protected:
 
     // Operations on clauses:
     //
-    void     newClause(const vec<Lit>& ps, bool learnt = false, ClauseId id = ClauseId_NULL);
+    void     newClause(const vec<Lit>& ps, bool learnt = false, ClauseId id = ClauseId_NULL );
     void     claBumpActivity (Clause* c) { if ( (c->activity() += cla_inc) > 1e20 ) claRescaleActivity(); }
     void     remove          (Clause* c, bool just_dealloc = false);
     bool     locked          (const Clause* c) const { return reason[var((*c)[0])] == c; }
@@ -132,6 +131,9 @@ public:
              , qhead            (0)
              , simpDB_assigns   (0)
              , simpDB_props     (0)
+             , _conflictNum     (-1)
+             , _aborted         (0)
+             , root_cla_count   (0) // MODIFICATION FOR SoCV
              , default_params   (SearchParams(0.95, 0.999, 0.02))
              , expensive_ccmin  (true)
              , proof            (NULL)
@@ -152,7 +154,13 @@ public:
        for (int i = 0; i < clauses.size(); i++) if (clauses[i] != NULL) remove(clauses[i], true);
        remove(propagate_tmpbin, true);
        remove(analyze_tmpbin, true);
-    }
+   }
+
+   int      _conflictNum;
+   bool     _aborted;
+   // MODIFICATION FOR SoCV
+   int      root_cla_count;
+
 
     // Helpers: (semi-internal)
     //
@@ -161,6 +169,7 @@ public:
 
     int     nAssigns() { return trail.size(); }
     int     nClauses() { return clauses.size(); }
+    int     nRootCla() { return root_cla_count; } // MODIFICATION FOR SoCV
     int     nLearnts() { return learnts.size(); }
 
     // Statistics: (read-only member variable)
@@ -181,12 +190,14 @@ public:
     void    addUnit   (Lit p)               { addUnit_tmp   [0] = p; addClause(addUnit_tmp); }
     void    addBinary (Lit p, Lit q)        { addBinary_tmp [0] = p; addBinary_tmp [1] = q; addClause(addBinary_tmp); }
     void    addTernary(Lit p, Lit q, Lit r) { addTernary_tmp[0] = p; addTernary_tmp[1] = q; addTernary_tmp[2] = r; addClause(addTernary_tmp); }
-    void    addClause (const vec<Lit>& ps)  { newClause(ps); }  // (used to be a difference between internal and external method...)
+    void    addClause (const vec<Lit>& ps )  { if (okay()) newClause(ps); }  // (used to be a difference between internal and external method...)
 
     // Solving:
     //
     bool    okay() { return ok; }       // FALSE means solver is in an conflicting state (must never be used again!)
     bool    simplifyDB();
+    lbool   solveLimited(const vec<Lit>& assumps, int64_t nConflicts);
+    lbool   solveLimited(int64_t nConflicts) { vec<Lit> tmp; return solveLimited(nConflicts); }
     bool    solve(const vec<Lit>& assumps);
     bool    solve() { vec<Lit> tmp; return solve(tmp); }
 
@@ -194,7 +205,8 @@ public:
     vec<lbool>  model;              // If problem is satisfiable, this vector contains the model (if any).
     vec<Lit>    conflict;           // If problem is unsatisfiable under assumptions, this vector represent the conflict clause expressed in the assumptions.
     ClauseId    conflict_id;        // (In proof logging mode only.) ID for the clause 'conflict' (for proof traverseral). NOTE! The empty clause is always the last clause derived, but for conflicts under assumption, this is not necessarly true.
-    
+    bool        mySolve(const vec<Lit>& assumps, int conflictThreshold, bool& result);
+        
     // Proof: For QuteRTL Interface
     bool    proof_logged() { return false; }
     bool    start_proof_logging() { return false; }

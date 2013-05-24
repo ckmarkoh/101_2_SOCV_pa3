@@ -44,7 +44,7 @@ class SatProofRes {
     V3SvrMiniSat* getSatSolver() const { return _satSolver; }
 
     void reportResult(const string&) const;
-    void reportCex(const V3NetId&) const;
+    void reportCex(const V3NetId&, const V3Ntk* const) const;
 
   private:
     uint32_t      _proved;
@@ -55,49 +55,48 @@ class SatProofRes {
 
 class SATMgr {
   public:
-    SATMgr():_ptrMinisat(NULL) { reset(); }
+    SATMgr():_ptrMinisat(NULL), _ntk(NULL) { reset(); }
     ~SATMgr() { reset(); }
 
     // entry point for SoCV SAT property checking
     void verifyProperty(const string& name, const V3NetId& monitor); 
 
-	// Various proof engines
-    void SPindUbmc(const V3NetId&, SatProofRes&);
-
     // Various proof engines
     void indUbmc(const V3NetId&, SatProofRes&);
-
+	void sPindUbmc(const V3NetId& monitor, SatProofRes& pRes);
+	void itpUbmc(const V3NetId& monitor, SatProofRes& pRes);
     // bind with a solver to get proof info.
-    void bind(V3SvrMiniSat* ptrMinisat) { _ptrMinisat = ptrMinisat; }
+    void bind(V3SvrMiniSat* ptrMinisat);
     // clear data members
     void reset();
-    // mark onset clause
+    // mark onset/offset clause
     void markOnsetClause(const ClauseId& cid);
-    // mark variable as local on, local off, or common
-    void markVarGroup(const Var& var, const VAR_GROUP& vg);
+    void markOffsetClause(const ClauseId& cid);
     // map var to V3Net (PPI)
     void mapVar2Net(const Var& var, const V3NetId& net);
-    // if you want to get proof log after a solving, plz use this
-    bool solveWithProof(const bool& doAssump);
     // please be sure that you call these function right after a UNSAT solving
     V3NetId getItp() const;
-    vector<ClauseId> getUNSATCore() const;
+    vector<Clause> getUNSATCore() const;
     // get number of clauses (the latest clause id + 1)
-    int getNumClauses() const{ return _ptrMinisat->_Solver->nClauses(); }
+    int getNumClauses() const{ return _ptrMinisat->_Solver->nRootCla(); }
 
   private:
     // helper functions to get proof info.
     V3NetId buildItp(const string& proofName) const;
     void retrieveProof(Reader& rdr, vector<unsigned>& clausePos, vector<ClauseId>& usedClause) const;
-    void retrieveProof(Reader& rdr, vector<ClauseId>& unsatCore) const;
+    void retrieveProof(Reader& rdr, vector<Clause>& unsatCore) const;
 
     // V3 minisat interface for model checking
     V3SvrMiniSat* _ptrMinisat;
+    // The duplicated V3Ntk
+    V3Ntk* _ntk;
 
     // to handle interpolation
-    vector<VAR_GROUP> _varGroup;   // mapping var to different groups
     map<Var, V3NetId> _var2Net;    // mapping common variables to net
     vector<bool>      _isClauseOn; // record onset clauses
+    // will be determined in retrieveProof, you don't need to take care about this!
+    mutable vector<bool>      _isClaOnDup; // duplication & extension of _isClauseOn
+    mutable vector<VAR_GROUP> _varGroup;   // mapping var to different groups
 };
 
 #endif /* SAT_MGR_H_ */
