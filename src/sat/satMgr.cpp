@@ -20,11 +20,12 @@
 using namespace std;
 
 #define SPIND_UBMC 0
-#define IND_UBMC  1
+#define IND_UBMC  0
 #define CBA_UBMC  0
 #define PBA_UBMC  0
 #define INTP_UBMC 0
 #define PDR_UBMC  0
+#define MIX_SP_UBMC 1
 
 void SATMgr::verifyProperty(const string& name, const V3NetId& monitor) {
   // TODO: finish your own SAT-based property checking
@@ -75,8 +76,25 @@ void SATMgr::verifyProperty(const string& name, const V3NetId& monitor) {
   reset();
   //cout<<"***end simple path induction UBMC***"<<endl<<endl;
   #endif
-  #if IND_UBMC
+
+  #if MIX_SP_UBMC
   //cout<<endl<<"***start simple path induction UBMC***"<<endl;
+  _ntk = new V3Ntk(); *_ntk = *(v3Handler.getCurHandler()->getNtk());
+  satSolver = new V3SvrMiniSat(_ntk, false, true);
+//  bind(satSolver);
+  // Prove the monitor here!!
+  pRes.setMaxDepth(100);
+  pRes.setSatSolver(satSolver);
+  mixSPindUbmc(monitor, pRes);
+  pRes.reportResult(name);
+  if (pRes.isFired())
+    pRes.reportCex(monitor, _ntk);
+  delete satSolver; delete _ntk;
+  reset();
+  //cout<<"***end simple path induction UBMC***"<<endl<<endl;
+  #endif
+
+  #if IND_UBMC
   _ntk = new V3Ntk(); *_ntk = *(v3Handler.getCurHandler()->getNtk());
   satSolver = new V3SvrMiniSat(_ntk, false, true);
 //  bind(satSolver);
@@ -89,7 +107,6 @@ void SATMgr::verifyProperty(const string& name, const V3NetId& monitor) {
     pRes.reportCex(monitor, _ntk);
   delete satSolver; delete _ntk;
   reset();
-  //cout<<"***end simple path induction UBMC***"<<endl<<endl;
   #endif
 }
 
@@ -147,7 +164,66 @@ void SATMgr::itpUbmc(const V3NetId& monitor, SatProofRes& pRes) {
 	}
   }
 }
+void SATMgr::mixSPindUbmc(const V3NetId& monitor, SatProofRes& pRes) {
+  V3SvrMiniSat* satSolver = pRes.getSatSolver();
+  for (uint32_t i = 0, j = pRes.getMaxDepth(); i < j; ++i) {
+    satSolver->addBoundedVerifyData(monitor, i);
+    satSolver->assumeRelease();
+	satSolver->assumeProperty(monitor, false, i);
+	/***SP***/
+	if(i%10==0){
+		for(size_t i2=0;i2<=i;i2++){
+			for(size_t z=2;z<=i2;z++){
+				V3PtrVec ffp_eq_vec;
+				ffp_eq_vec.clear();
+				for (unsigned k=0;k<_ntk->getLatchSize();k++) {
+				  V3NetId  ffp=_ntk->getLatch(k);
+				  if((satSolver->existVerifyData(ffp, i2-1))&&
+					(satSolver->existVerifyData(ffp,i2-z)) 
+					){
+						V3SvrData ffp_pre1=satSolver->getFormula(ffp, i2-1);
+						V3SvrData ffp_pre2=satSolver->getFormula(ffp, i2-z);
+						V3PtrVec ffp_f1,ffp_f2,ffp_u1;
+						ffp_f1.clear();
+						ffp_f2.clear();
+						ffp_u1.clear();
+						ffp_f1.push_back(ffp_pre1);
+						ffp_f1.push_back(satSolver->getNegFormula(ffp_pre2));
+						ffp_f2.push_back(satSolver->getNegFormula(ffp_pre1));
+						ffp_f2.push_back(ffp_pre2);
+						V3SvrData ffp_i1=satSolver->setImplyIntersection(ffp_f1);
+						V3SvrData ffp_i2=satSolver->setImplyIntersection(ffp_f2);
+						ffp_u1.push_back(ffp_i1);
+						ffp_u1.push_back(ffp_i2);
+						V3SvrData ffp_xor=satSolver->setImplyUnion(ffp_u1);
+						ffp_eq_vec.push_back(ffp_xor);
+				//	}
+				  } //else  cout <<"id:"<< ffp.id<<" val:" <<"x"<<endl;
+				}
+				V3SvrData ffp_eq= satSolver->setImplyUnion(ffp_eq_vec);
+				satSolver->assumeProperty(ffp_eq,false);
+			}
+		}
+	}
+	/***END SP***/
 
+    satSolver->simplify();
+    // Assumption Solve : If UNSAT, proved!
+    if (!satSolver->assump_solve()) {
+		cout<<"proved"<<endl;
+      pRes.setProved(i); break;
+    }
+    satSolver->assumeInit(); // Conjunction with initial condition
+    if (satSolver->assump_solve()) {
+	  cout<<"disproved"<<endl;
+		  pRes.setFired(i); break;
+       assert (pRes.isFired()); break;
+    }
+    for (uint32_t k = i - 1; k < i; ++k){
+      satSolver->assertProperty(monitor, true, k);
+	}
+  }
+}
 void SATMgr::sPindUbmc(const V3NetId& monitor, SatProofRes& pRes) {
   // Solver Data
 //  V3SvrData pFormulaData; 

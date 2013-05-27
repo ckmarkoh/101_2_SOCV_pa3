@@ -65,6 +65,7 @@ class SATMgr {
     void indUbmc(const V3NetId&, SatProofRes&);
 	void sPindUbmc(const V3NetId& monitor, SatProofRes& pRes);
 	void itpUbmc(const V3NetId& monitor, SatProofRes& pRes);
+	void mixSPindUbmc(const V3NetId& monitor, SatProofRes& pRes);
     // bind with a solver to get proof info.
     void bind(V3SvrMiniSat* ptrMinisat);
     // clear data members
